@@ -10,7 +10,8 @@
     "dev": "tsx watch src/main.ts",
     "start": "tsx src/main.ts",
     "typecheck": "tsc --noEmit",
-    "token": "tsx scripts/create-token.ts"
+    "token": "tsx scripts/create-token.ts",
+    "subscribe": "tsx scripts/add-subscription.ts"
   },
   "dependencies": {
     "better-sqlite3": "^11.10.0",

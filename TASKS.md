@@ -20,11 +20,13 @@
 - [ ] Test de bout en bout réel : ajout du compte sur macOS/iOS, créer/modifier/supprimer un événement
 
 ## Étape 2 — Worker de sync .ics
-- [ ] `sync/fetcher.ts` : GET conditionnel (If-None-Match / If-Modified-Since) + sha256
-- [ ] `sync/reconciler.ts` : parsing ical.js, groupement par UID (master + RECURRENCE-ID),
-      diff par etag, upsert/tombstone en une transaction, bump sync_token unique
-- [ ] `sync/scheduler.ts` : boucle setTimeout séquentielle, jitter, backoff sur erreur
-- [ ] Cas limites : UID dupliqué (dernier gagne + log), VEVENT sans UID (UID forgé hash DTSTART+SUMMARY)
+- [x] `sync/fetcher.ts` : GET conditionnel (If-None-Match / If-Modified-Since) + sha256
+- [x] `sync/reconciler.ts` : ical.js, groupement par UID (master + RECURRENCE-ID),
+      diff par etag, upsert/tombstone via ObjectService — vérifié : +2/-1 puis 'unchanged'
+- [x] `sync/scheduler.ts` : tick 60s séquentiel ; l'intervalle d'abonnement sert de backoff
+      (pas de backoff exponentiel dédié — à ajouter si un flux instable le justifie)
+- [x] VEVENT sans UID : UID forgé depuis DTSTART+SUMMARY — vérifié
+- [x] Scripts : `npm run subscribe -- <url> <uri> "<nom>" [s]`, `npx tsx scripts/sync-once.ts`
 - [ ] Purge périodique des tombstones anciens
 
 ## Plus tard (hors v1)
