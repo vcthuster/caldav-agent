@@ -11,6 +11,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AuthTokenRepo, CalendarRepo, ObjectRepo } from '../core/ports.js';
 import type { ObjectService } from '../core/services/object-service.js';
+import { handleApi } from './api.js';
 import { authenticate } from './auth.js';
 import { handlePropfind, type DavResponse } from './handlers/propfind.js';
 import { handleReport } from './handlers/report.js';
@@ -56,7 +57,10 @@ async function handle(req: IncomingMessage, res: ServerResponse, deps: ServerDep
   }
 
   const body = await readBody(req);
-  const out = route(req, path, body, deps);
+  const out = path.startsWith('/api/')
+    ? handleApi(req.method ?? 'GET', path, new URL(req.url ?? '/', 'http://x').searchParams,
+        body, deps.calendars, deps.objects, deps.objectService)
+    : route(req, path, body, deps);
   res.writeHead(out.status, { ...DAV_HEADERS, ...out.headers }).end(out.body);
 }
 

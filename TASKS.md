@@ -29,6 +29,12 @@
 - [x] Scripts : `npm run subscribe -- <url> <uri> "<nom>" [s]`, `npx tsx scripts/sync-once.ts`
 - [ ] Purge périodique des tombstones anciens
 
+## Étape 3 — API JSON (intégrations programmatiques)
+- [x] `protocol/api.ts` : GET /api/calendars, GET/POST /api/events, DELETE — via ObjectService
+      (ctag/tombstones/bus corrects, écritures visibles côté CalDAV) — vérifié curl + plugin
+- [x] `core/ical.ts` buildEvent : génération VEVENT simple (UTC)
+- [x] README.md (présentation agnostique : CalDAV + abonnements + API JSON)
+
 ## Plus tard (hors v1)
 - [ ] Chargeur de plugins (le contrat `plugins/types.ts` existe déjà)
 - [ ] Accès distant : Tailscale ou reverse proxy Caddy (pas de TLS dans le serveur)

@@ -65,6 +65,35 @@ export function splitFeedByUid(feed: string): Map<string, string> {
   return out;
 }
 
+export interface NewEvent {
+  uid: string;
+  summary: string;
+  /** ISO 8601 ; stockés en UTC dans le VEVENT. */
+  start: string;
+  end: string;
+  description?: string;
+  location?: string;
+}
+
+/** Construit un VCALENDAR autonome pour un événement simple (non récurrent). */
+export function buildEvent(e: NewEvent): string {
+  const vevent = new ICAL.Component('vevent');
+  const event = new ICAL.Event(vevent);
+  event.uid = e.uid;
+  event.summary = e.summary;
+  event.startDate = ICAL.Time.fromJSDate(new Date(e.start), true);
+  event.endDate = ICAL.Time.fromJSDate(new Date(e.end), true);
+  if (e.description) event.description = e.description;
+  if (e.location) event.location = e.location;
+  vevent.updatePropertyWithValue('dtstamp', ICAL.Time.fromJSDate(new Date(), true));
+
+  const cal = new ICAL.Component(['vcalendar', [], []]);
+  cal.updatePropertyWithValue('version', '2.0');
+  cal.updatePropertyWithValue('prodid', '-//caldav-agent//FR');
+  cal.addSubcomponent(vevent);
+  return cal.toString();
+}
+
 function forgeUid(vevent: ICAL.Component): string {
   const start = vevent.getFirstPropertyValue('dtstart')?.toString() ?? '';
   const summary = vevent.getFirstPropertyValue('summary')?.toString() ?? '';
