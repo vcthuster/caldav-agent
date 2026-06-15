@@ -9,7 +9,7 @@
  */
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import type { AuthTokenRepo, CalendarRepo, ObjectRepo } from '../core/ports.js';
+import type { AuthTokenRepo, CalendarRepo, ObjectRepo, SubscriptionRepo } from '../core/ports.js';
 import type { ObjectService } from '../core/services/object-service.js';
 import { handleApi } from './api.js';
 import { authenticate } from './auth.js';
@@ -20,46 +20,56 @@ import { handleDelete, handleGet, handlePut } from './handlers/objects.js';
 export interface ServerDeps {
   calendars: CalendarRepo;
   objects: ObjectRepo;
+  subscriptions: SubscriptionRepo;
   objectService: ObjectService;
   authTokens: AuthTokenRepo;
+  tx: <T>(fn: () => T) => T;
+  bus: import('../core/events.js').EventBus;
 }
 
 const DAV_HEADERS = {
   DAV: '1, 3, calendar-access',
-  Allow: 'OPTIONS, GET, PUT, DELETE, PROPFIND, REPORT',
+  Server: 'caldav-agent/0.1.0',
 };
 
+/** Routeur racine. » */
 export function createCaldavServer(deps: ServerDeps): Server {
   return createServer((req, res) => {
-    void handle(req, res, deps).catch((err) => {
-      console.error('[caldav] erreur interne :', err);
+    void handleRequest(req, res, deps).catch((e) => {
+      console.error('[http] erreur non gérée :', e);
       if (!res.headersSent) res.writeHead(500).end();
     });
   });
 }
 
-async function handle(req: IncomingMessage, res: ServerResponse, deps: ServerDeps): Promise<void> {
-  const path = decodeURIComponent((req.url ?? '/').split('?')[0]!);
-
-  if (path === '/.well-known/caldav') {
-    res.writeHead(301, { Location: '/' }).end();
-    return;
-  }
+async function handleRequest(req: IncomingMessage, res: ServerResponse, deps: ServerDeps): Promise<void> {
+  // CORS basique (Apple Agenda fait des OPTIONS preflight)
   if (req.method === 'OPTIONS') {
-    res.writeHead(200, DAV_HEADERS).end();
+    res.writeHead(200, {
+      ...DAV_HEADERS,
+      'Allow': 'OPTIONS, GET, HEAD, POST, PUT, DELETE, TRACE, COPY, MOVE, PROPFIND, PROPPATCH, LOCK, UNLOCK, REPORT, ACL',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'OPTIONS, GET, HEAD, POST, PUT, DELETE, TRACE, COPY, MOVE, PROPFIND, PROPPATCH, LOCK, UNLOCK, REPORT, ACL',
+      'Access-Control-Allow-Headers': 'Authorization, Content-Type, Depth, If, If-Match, If-None-Match',
+      'Access-Control-Expose-Headers': 'ETag',
+    }).end();
     return;
   }
 
-  const client = authenticate(req, deps.authTokens);
-  if (!client) {
-    res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="caldav-agent"' }).end();
+  const auth = authenticate(req, deps.authTokens);
+  if (!auth) {
+    res.writeHead(401, {
+      'WWW-Authenticate': 'Basic realm="caldav-agent"',
+      'Content-Type': 'text/plain',
+    }).end('Non autorisé');
     return;
   }
 
+  const path = new URL(req.url ?? '/', 'http://x').pathname;
   const body = await readBody(req);
   const out = path.startsWith('/api/')
-    ? handleApi(req.method ?? 'GET', path, new URL(req.url ?? '/', 'http://x').searchParams,
-        body, deps.calendars, deps.objects, deps.objectService)
+    ? await handleApi(req.method ?? 'GET', path, new URL(req.url ?? '/', 'http://x').searchParams,
+        body, deps.calendars, deps.objects, deps.subscriptions, deps.objectService, deps.tx, deps.bus)
     : route(req, path, body, deps);
   res.writeHead(out.status, { ...DAV_HEADERS, ...out.headers }).end(out.body);
 }

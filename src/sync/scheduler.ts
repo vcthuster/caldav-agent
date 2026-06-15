@@ -18,41 +18,46 @@ export interface SyncDeps {
   bus: EventBus;
 }
 
+/** Synchronise un seul abonnement. */
+export async function runSingleSync(sub: import('../core/models.js').Subscription, deps: SyncDeps): Promise<void> {
+  const cal = deps.calendars.list().find((c) => c.id === sub.calendar_id);
+  if (!cal) return;
+
+  const result = await fetchFeed(sub);
+  const now = new Date().toISOString();
+  switch (result.kind) {
+    case 'unchanged':
+      deps.subscriptions.update({ ...sub, last_sync_at: now, last_status: 'unchanged' });
+      break;
+    case 'error':
+      deps.subscriptions.update({ ...sub, last_sync_at: now, last_status: `error: ${result.message}` });
+      console.error(`[sync] ${sub.url} : ${result.message}`);
+      break;
+    case 'changed': {
+      try {
+        const { changed, removed } = reconcile(cal, result.body, deps.objects, deps.objectService, deps.bus);
+        deps.subscriptions.update({
+          ...sub,
+          http_etag: result.http_etag,
+          http_last_modified: result.http_last_modified,
+          content_hash: result.content_hash,
+          last_sync_at: now,
+          last_status: `ok (+${changed} / -${removed})`,
+        });
+      } catch (e) {
+        // Flux téléchargé mais inexploitable : on garde l'état précédent.
+        deps.subscriptions.update({ ...sub, last_sync_at: now, last_status: `error: parse: ${String(e)}` });
+        console.error(`[sync] ${sub.url} : parsing impossible`, e);
+      }
+      break;
+    }
+  }
+}
+
 /** Synchronise tous les abonnements échus. Exporté seul pour testabilité. */
 export async function runDueSyncs(deps: SyncDeps): Promise<void> {
   for (const sub of deps.subscriptions.listDue(new Date().toISOString())) {
-    const cal = deps.calendars.list().find((c) => c.id === sub.calendar_id);
-    if (!cal) continue;
-
-    const result = await fetchFeed(sub);
-    const now = new Date().toISOString();
-    switch (result.kind) {
-      case 'unchanged':
-        deps.subscriptions.update({ ...sub, last_sync_at: now, last_status: 'unchanged' });
-        break;
-      case 'error':
-        deps.subscriptions.update({ ...sub, last_sync_at: now, last_status: `error: ${result.message}` });
-        console.error(`[sync] ${sub.url} : ${result.message}`);
-        break;
-      case 'changed': {
-        try {
-          const { changed, removed } = reconcile(cal, result.body, deps.objects, deps.objectService, deps.bus);
-          deps.subscriptions.update({
-            ...sub,
-            http_etag: result.http_etag,
-            http_last_modified: result.http_last_modified,
-            content_hash: result.content_hash,
-            last_sync_at: now,
-            last_status: `ok (+${changed} / -${removed})`,
-          });
-        } catch (e) {
-          // Flux téléchargé mais inexploitable : on garde l'état précédent.
-          deps.subscriptions.update({ ...sub, last_sync_at: now, last_status: `error: parse: ${String(e)}` });
-          console.error(`[sync] ${sub.url} : parsing impossible`, e);
-        }
-        break;
-      }
-    }
+    await runSingleSync(sub, deps);
   }
 }
 

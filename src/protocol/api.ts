@@ -15,18 +15,22 @@ import type { CalendarObject } from '../core/models.js';
 import type { CalendarRepo, ObjectRepo } from '../core/ports.js';
 import { ReadOnlyCalendar, type ObjectService } from '../core/services/object-service.js';
 import type { DavResponse } from './handlers/propfind.js';
+import { runSingleSync } from '../sync/scheduler.js';
 
 const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8' };
 
-export function handleApi(
+export async function handleApi(
   method: string,
   path: string,
   query: URLSearchParams,
   body: string,
   calendars: CalendarRepo,
   objects: ObjectRepo,
-  service: ObjectService
-): DavResponse {
+  subscriptions: import('../core/ports.js').SubscriptionRepo,
+  service: ObjectService,
+  tx: <T>(fn: () => T) => T,
+  bus: import('../core/events.js').EventBus
+): Promise<DavResponse> {
   if (method === 'GET' && path === '/api/calendars') {
     return json(200, calendars.list().map((c) => ({
       uri: c.uri,
@@ -90,6 +94,65 @@ export function handleApi(
     } catch (e) {
       if (e instanceof ReadOnlyCalendar) return err(403, 'calendrier en lecture seule (abonnement)');
       throw e;
+    }
+  }
+
+  if (method === 'POST' && path === '/api/subscriptions') {
+    let input: Record<string, unknown>;
+    try {
+      input = JSON.parse(body) as Record<string, unknown>;
+    } catch {
+      return err(400, 'corps JSON invalide');
+    }
+    const { uri, name, url, color } = input as Record<string, string | undefined>;
+    if (!uri || !name || !url) {
+      return err(400, 'champs requis : uri, name, url');
+    }
+    if (calendars.findByUri(uri)) {
+      return err(409, 'un calendrier avec cette uri existe déjà');
+    }
+
+    try {
+      const calId = tx(() => {
+        const id = calendars.insert({
+          uri,
+          display_name: name,
+          color: color ?? null,
+          timezone: 'Europe/Paris', // par défaut
+          is_subscription: 1,
+        });
+        subscriptions.insert({
+          calendar_id: id,
+          url,
+          sync_interval_s: 3600, // 1 heure
+        });
+        return id;
+      });
+      return json(201, { calendar_id: calId, uri, message: 'Abonnement ajouté' });
+    } catch (e) {
+      return err(500, "erreur lors de la création de l'abonnement");
+    }
+  }
+
+  const subActionMatch = /^\/api\/subscriptions\/([^/]+)(?:\/(sync))?$/.exec(path);
+  if (subActionMatch?.[1]) {
+    const uri = subActionMatch[1];
+    const action = subActionMatch[2]; // 'sync' or undefined
+
+    const cal = calendars.findByUri(uri);
+    if (!cal) return err(404, 'calendrier inconnu');
+    if (cal.is_subscription !== 1) return err(400, "ce calendrier n'est pas un abonnement");
+
+    if (method === 'DELETE' && !action) {
+      calendars.delete(cal.id);
+      return { status: 204 };
+    }
+
+    if (method === 'POST' && action === 'sync') {
+      const sub = subscriptions.findByCalendarId(cal.id);
+      if (!sub) return err(404, "abonnement introuvable en base");
+      await runSingleSync(sub, { calendars, objects, subscriptions, objectService: service, bus });
+      return json(200, { message: 'Synchronisation forcée effectuée' });
     }
   }
 

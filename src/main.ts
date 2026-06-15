@@ -33,7 +33,7 @@ const objectService = new ObjectService(calendars, objects, tx, bus);
 
 startScheduler({ calendars, objects, subscriptions, objectService, bus });
 
-const server = createCaldavServer({ calendars, objects, objectService, authTokens });
+const server = createCaldavServer({ calendars, objects, subscriptions, objectService, authTokens, tx, bus });
 server.listen(PORT, () => {
   console.log(`[caldav-agent] serveur CalDAV sur http://0.0.0.0:${PORT} (bdd: ${DB_PATH})`);
 });

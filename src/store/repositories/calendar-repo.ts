@@ -18,5 +18,18 @@ export function createCalendarRepo(db: Database.Database): CalendarRepo {
           )
           .get(nowIso(), calendar_id) as { sync_token: number }
       ).sync_token,
+
+    insert: (cal) => {
+      const now = nowIso();
+      const res = db.prepare(
+        `INSERT INTO calendars (uri, display_name, color, timezone, is_subscription, sync_token, created_at, updated_at)
+         VALUES (@uri, @display_name, @color, @timezone, @is_subscription, 1, @created_at, @updated_at)`
+      ).run({ ...cal, created_at: now, updated_at: now });
+      return res.lastInsertRowid as number;
+    },
+
+    delete: (id) => {
+      db.prepare('DELETE FROM calendars WHERE id = ?').run(id);
+    },
   };
 }

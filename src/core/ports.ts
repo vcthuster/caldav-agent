@@ -11,6 +11,8 @@ export interface CalendarRepo {
   list(): Calendar[];
   /** Incrémente sync_token et le retourne — à appeler dans la même transaction que les mutations. */
   bumpSyncToken(calendar_id: number): number;
+  insert(cal: Omit<Calendar, 'id' | 'sync_token' | 'created_at' | 'updated_at'>): number;
+  delete(id: number): void;
 }
 
 export interface ObjectRepo {
@@ -27,9 +29,11 @@ export interface ObjectRepo {
 }
 
 export interface SubscriptionRepo {
+  findByCalendarId(calendar_id: number): Subscription | undefined;
   /** Abonnements dont last_sync_at + sync_interval_s est échu. */
   listDue(now_iso: string): Subscription[];
   update(sub: Subscription): void;
+  insert(sub: Omit<Subscription, 'id' | 'http_etag' | 'http_last_modified' | 'content_hash' | 'last_sync_at' | 'last_status'>): void;
 }
 
 export interface AuthTokenRepo {
