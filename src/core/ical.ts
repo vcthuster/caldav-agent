@@ -94,6 +94,40 @@ export function buildEvent(e: NewEvent): string {
   return cal.toString();
 }
 
+export interface EventPatch {
+  summary?: string;
+  /** ISO 8601. */
+  start?: string;
+  end?: string;
+  description?: string;
+  location?: string;
+}
+
+/** Applique une modification PARTIELLE au VEVENT maître d'un VCALENDAR existant :
+ *  ne touche que les champs fournis, préserve l'UID et tout le reste (invités,
+ *  alarmes, VTIMEZONE…), incrémente SEQUENCE — sans quoi un client CalDAV peut
+ *  ignorer la modif — et rafraîchit DTSTAMP. Jette si le blob n'a pas de VEVENT
+ *  maître. Pur. */
+export function patchEvent(ical: string, patch: EventPatch): string {
+  const comp = new ICAL.Component(ICAL.parse(ical));
+  const vevents = comp.getAllSubcomponents('vevent');
+  const master = vevents.find((v) => !v.hasProperty('recurrence-id')) ?? vevents[0];
+  if (!master) throw new Error('VCALENDAR sans VEVENT');
+  const event = new ICAL.Event(master);
+
+  if (patch.summary !== undefined) event.summary = patch.summary;
+  if (patch.start !== undefined) event.startDate = ICAL.Time.fromJSDate(new Date(patch.start), true);
+  if (patch.end !== undefined) event.endDate = ICAL.Time.fromJSDate(new Date(patch.end), true);
+  if (patch.description !== undefined) event.description = patch.description;
+  if (patch.location !== undefined) event.location = patch.location;
+
+  const seq = Number(master.getFirstPropertyValue('sequence') ?? 0);
+  master.updatePropertyWithValue('sequence', (Number.isFinite(seq) ? seq : 0) + 1);
+  master.updatePropertyWithValue('dtstamp', ICAL.Time.fromJSDate(new Date(), true));
+
+  return comp.toString();
+}
+
 function forgeUid(vevent: ICAL.Component): string {
   const start = vevent.getFirstPropertyValue('dtstart')?.toString() ?? '';
   const summary = vevent.getFirstPropertyValue('summary')?.toString() ?? '';

@@ -6,14 +6,15 @@
  *   GET    /api/calendars
  *   GET    /api/events?calendar=<uri>&start=<ISO>&end=<ISO>
  *   POST   /api/events            {calendar, summary, start, end, description?, location?}
+ *   PUT    /api/events/<calendar>/<href>  {summary?, start?, end?, description?, location?, etag?}  (modif partielle)
  *   DELETE /api/events/<calendar>/<href>
  */
 
 import { randomUUID } from 'node:crypto';
-import { buildEvent } from '../core/ical.js';
+import { buildEvent, patchEvent, type EventPatch } from '../core/ical.js';
 import type { CalendarObject } from '../core/models.js';
 import type { CalendarRepo, ObjectRepo } from '../core/ports.js';
-import { ReadOnlyCalendar, type ObjectService } from '../core/services/object-service.js';
+import { PreconditionFailed, ReadOnlyCalendar, type ObjectService } from '../core/services/object-service.js';
 import type { DavResponse } from './handlers/propfind.js';
 import { runSingleSync } from '../sync/scheduler.js';
 
@@ -156,12 +157,63 @@ export async function handleApi(
     }
   }
 
-  const del = /^\/api\/events\/([^/]+)\/([^/]+)$/.exec(path);
-  if (method === 'DELETE' && del?.[1] && del[2]) {
-    const cal = calendars.findByUri(del[1]);
+  const evMatch = /^\/api\/events\/([^/]+)\/([^/]+)$/.exec(path);
+
+  if (method === 'PUT' && evMatch?.[1] && evMatch[2]) {
+    const cal = calendars.findByUri(evMatch[1]);
+    if (!cal) return err(404, 'calendrier inconnu');
+    const existing = objects.findByHref(cal.id, evMatch[2]);
+    if (!existing || existing.deleted_at) return err(404, 'événement inconnu');
+
+    let input: Record<string, unknown>;
+    try {
+      input = JSON.parse(body) as Record<string, unknown>;
+    } catch {
+      return err(400, 'corps JSON invalide');
+    }
+    const { summary, start, end, description, location, etag } = input as Record<string, string | undefined>;
+    // Modification partielle : au moins un champ à changer.
+    const patch: EventPatch = {
+      ...(summary !== undefined ? { summary } : {}),
+      ...(start !== undefined ? { start } : {}),
+      ...(end !== undefined ? { end } : {}),
+      ...(description !== undefined ? { description } : {}),
+      ...(location !== undefined ? { location } : {}),
+    };
+    if (Object.keys(patch).length === 0)
+      return err(400, 'aucun champ à modifier (summary, start, end, description ou location)');
+    if (start !== undefined && !isIsoDate(start)) return err(400, 'start invalide (ISO 8601)');
+    if (end !== undefined && !isIsoDate(end)) return err(400, 'end invalide (ISO 8601)');
+    // Ordre start<end vérifié sur les valeurs EFFECTIVES (après patch), quand les
+    // deux sont connues (dtend_utc est null pour un récurrent → on ne bloque pas).
+    const effStart = start ?? existing.dtstart_utc;
+    const effEnd = end ?? existing.dtend_utc;
+    if (effStart && effEnd && new Date(effEnd) <= new Date(effStart))
+      return err(400, 'end doit être après start');
+
+    let updated: string;
+    try {
+      updated = patchEvent(existing.ical, patch);
+    } catch {
+      return err(422, 'événement existant illisible');
+    }
+    try {
+      const newEtag = service.put(cal, evMatch[2], updated, {
+        ...(etag !== undefined ? { if_match: etag } : {}),
+      });
+      return json(200, { calendar: cal.uri, href: evMatch[2], uid: existing.uid, etag: newEtag });
+    } catch (e) {
+      if (e instanceof PreconditionFailed) return err(412, 'événement modifié entre-temps (etag périmé)');
+      if (e instanceof ReadOnlyCalendar) return err(403, 'calendrier en lecture seule (abonnement)');
+      throw e;
+    }
+  }
+
+  if (method === 'DELETE' && evMatch?.[1] && evMatch[2]) {
+    const cal = calendars.findByUri(evMatch[1]);
     if (!cal) return err(404, 'calendrier inconnu');
     try {
-      return service.delete(cal, del[2]) ? { status: 204 } : err(404, 'événement inconnu');
+      return service.delete(cal, evMatch[2]) ? { status: 204 } : err(404, 'événement inconnu');
     } catch (e) {
       if (e instanceof ReadOnlyCalendar) return err(403, 'calendrier en lecture seule (abonnement)');
       throw e;

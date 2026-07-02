@@ -40,6 +40,7 @@ Same data, same authentication (Basic), for programmatic use:
 | `GET` | `/api/calendars` | List calendars |
 | `GET` | `/api/events?start=&end=&calendar=` | Events within a time window (ISO 8601) |
 | `POST` | `/api/events` | Create an event: `{summary, start, end, calendar?, description?, location?}` |
+| `PUT` | `/api/events/{calendar}/{href}` | Update an event (partial): `{summary?, start?, end?, description?, location?, etag?}` |
 | `DELETE` | `/api/events/{calendar}/{href}` | Delete an event |
 
 ```bash

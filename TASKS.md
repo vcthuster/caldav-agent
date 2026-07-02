@@ -33,6 +33,12 @@
 - [x] `protocol/api.ts` : GET /api/calendars, GET/POST /api/events, DELETE — via ObjectService
       (ctag/tombstones/bus corrects, écritures visibles côté CalDAV) — vérifié curl + plugin
 - [x] `core/ical.ts` buildEvent : génération VEVENT simple (UTC)
+- [x] **PUT /api/events/{cal}/{href} — modification (2026-07-02)** : modif PARTIELLE via
+      `core/ical.ts patchEvent` (parse l'existant, ne change que les champs fournis, préserve
+      UID + description/lieu/tout le reste, incrémente SEQUENCE, rafraîchit DTSTAMP). Concurrence
+      optimiste via `etag`→`if_match` (412 si périmé), read-only 403, 404 si absent. Réutilise
+      `service.put` (même primitif que le PUT CalDAV natif). Smoke-test patchEvent OK (UID/champs
+      préservés, SEQUENCE 0→1→2). emit `object.updated` déjà géré par le service.
 - [x] README.md (présentation agnostique : CalDAV + abonnements + API JSON)
 
 ## Plus tard (hors v1)
