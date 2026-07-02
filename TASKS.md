@@ -39,6 +39,11 @@
       optimiste via `etag`→`if_match` (412 si périmé), read-only 403, 404 si absent. Réutilise
       `service.put` (même primitif que le PUT CalDAV natif). Smoke-test patchEvent OK (UID/champs
       préservés, SEQUENCE 0→1→2). emit `object.updated` déjà géré par le service.
+- [x] **Fix bug pré-existant (2026-07-02)** : `URL.pathname` ne décode pas `%XX` → un href créé
+      via l'API (`<uid>@caldav-agent.ics`) arrivait en `%40` et ne matchait aucun objet →
+      **DELETE ET PUT en 404** sur les événements créés par l'API (invisible car les href des
+      clients natifs n'ont pas de `@`). `decodeURIComponent` sur les 2 segments. **e2e vérifié**
+      sur le serveur déployé : create→update(200, etag→412 si périmé)→delete(204).
 - [x] README.md (présentation agnostique : CalDAV + abonnements + API JSON)
 
 ## Plus tard (hors v1)
