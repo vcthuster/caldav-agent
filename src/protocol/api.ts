@@ -158,11 +158,15 @@ export async function handleApi(
   }
 
   const evMatch = /^\/api\/events\/([^/]+)\/([^/]+)$/.exec(path);
+  // URL.pathname ne décode PAS le %XX : un href créé via l'API (`<uid>@caldav-agent.ics`)
+  // arrive donc en `%40` et ne matcherait aucun objet stocké. On décode les deux segments.
+  const evCal = evMatch?.[1] ? decodeURIComponent(evMatch[1]) : undefined;
+  const evHref = evMatch?.[2] ? decodeURIComponent(evMatch[2]) : undefined;
 
-  if (method === 'PUT' && evMatch?.[1] && evMatch[2]) {
-    const cal = calendars.findByUri(evMatch[1]);
+  if (method === 'PUT' && evCal && evHref) {
+    const cal = calendars.findByUri(evCal);
     if (!cal) return err(404, 'calendrier inconnu');
-    const existing = objects.findByHref(cal.id, evMatch[2]);
+    const existing = objects.findByHref(cal.id, evHref);
     if (!existing || existing.deleted_at) return err(404, 'événement inconnu');
 
     let input: Record<string, unknown>;
@@ -198,10 +202,10 @@ export async function handleApi(
       return err(422, 'événement existant illisible');
     }
     try {
-      const newEtag = service.put(cal, evMatch[2], updated, {
+      const newEtag = service.put(cal, evHref, updated, {
         ...(etag !== undefined ? { if_match: etag } : {}),
       });
-      return json(200, { calendar: cal.uri, href: evMatch[2], uid: existing.uid, etag: newEtag });
+      return json(200, { calendar: cal.uri, href: evHref, uid: existing.uid, etag: newEtag });
     } catch (e) {
       if (e instanceof PreconditionFailed) return err(412, 'événement modifié entre-temps (etag périmé)');
       if (e instanceof ReadOnlyCalendar) return err(403, 'calendrier en lecture seule (abonnement)');
@@ -209,11 +213,11 @@ export async function handleApi(
     }
   }
 
-  if (method === 'DELETE' && evMatch?.[1] && evMatch[2]) {
-    const cal = calendars.findByUri(evMatch[1]);
+  if (method === 'DELETE' && evCal && evHref) {
+    const cal = calendars.findByUri(evCal);
     if (!cal) return err(404, 'calendrier inconnu');
     try {
-      return service.delete(cal, evMatch[2]) ? { status: 204 } : err(404, 'événement inconnu');
+      return service.delete(cal, evHref) ? { status: 204 } : err(404, 'événement inconnu');
     } catch (e) {
       if (e instanceof ReadOnlyCalendar) return err(403, 'calendrier en lecture seule (abonnement)');
       throw e;
