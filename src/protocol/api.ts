@@ -11,7 +11,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { buildEvent, patchEvent, type EventPatch } from '../core/ical.js';
+import { buildEvent, patchEvent, extractDetails, type EventPatch } from '../core/ical.js';
 import type { CalendarObject } from '../core/models.js';
 import type { CalendarRepo, ObjectRepo } from '../core/ports.js';
 import { PreconditionFailed, ReadOnlyCalendar, type ObjectService } from '../core/services/object-service.js';
@@ -61,6 +61,9 @@ export async function handleApi(
           end: o.dtend_utc,
           recurring: o.is_recurring === 1,
           etag: o.etag,
+          // Lieu + note parsés à la volée depuis le blob ICS (pas d'index SQL) :
+          // alimentent la vignette et le pré-remplissage de l'éditeur côté client.
+          ...extractDetails(o.ical),
         }))
     );
     events.sort((a, b) => (a.start ?? '').localeCompare(b.start ?? ''));

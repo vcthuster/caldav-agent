@@ -36,6 +36,22 @@ export function extractMeta(ical: string): IcalMeta {
   };
 }
 
+/** Extrait le lieu et la note (description) du VEVENT maître. Best-effort :
+ *  renvoie null/null si le blob est illisible — ne jette jamais (appelé au
+ *  rendu de la liste d'événements, où une erreur ne doit pas casser la réponse). */
+export function extractDetails(ical: string): { location: string | null; description: string | null } {
+  try {
+    const comp = new ICAL.Component(ICAL.parse(ical));
+    const vevents = comp.getAllSubcomponents('vevent');
+    const master = vevents.find((v) => !v.hasProperty('recurrence-id')) ?? vevents[0];
+    if (!master) return { location: null, description: null };
+    const event = new ICAL.Event(master);
+    return { location: event.location || null, description: event.description || null };
+  } catch {
+    return { location: null, description: null };
+  }
+}
+
 /** Regroupe les VEVENT d'un flux par UID (maître + overrides RECURRENCE-ID)
  *  et resérialise chaque groupe en VCALENDAR autonome, VTIMEZONE inclus. */
 export function splitFeedByUid(feed: string): Map<string, string> {
